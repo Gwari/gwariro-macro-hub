@@ -1,0 +1,253 @@
+import yfinance as yf
+import pandas as pd
+from datetime import datetime
+
+print("🚀 MACRO HUB: Building Gwariro Capital Macro Dashboard...")
+
+CORE_PAIRS = {
+    "EURUSD": "EURUSD=X",
+    "GBPUSD": "GBPUSD=X",
+    "EURGBP": "EURGBP=X",
+    "EURJPY": "EURJPY=X",
+    "EURAUD": "EURAUD=X",
+    "EURCAD": "EURCAD=X",
+    "USDMXN": "USDMXN=X",
+    "MXNJPY": "MXNJPY=X"
+}
+
+def fetch_data():
+    market_data = {}
+    print("📊 Fetching live market prices and weekly changes...")
+    for symbol, ticker in CORE_PAIRS.items():
+        try:
+            df = yf.download(ticker, period="1mo", progress=False)
+            if not df.empty:
+                close_series = df['Close']
+                if isinstance(close_series, pd.DataFrame):
+                    close_series = close_series.iloc[:, 0]
+                
+                current_price = float(close_series.iloc[-1])
+                prev_week_price = float(close_series.iloc[-5])
+                weekly_change = current_price - prev_week_price
+                pct_change = (weekly_change / prev_week_price) * 100
+                bias_score = max(min(round(pct_change * 2, 1), 5.0), -5.0)
+                
+                market_data[symbol] = {
+                    "price": round(current_price, 4),
+                    "change": round(weekly_change, 4),
+                    "pct": round(pct_change, 2),
+                    "bias": bias_score
+                }
+                print(f"   ✅ {symbol}: {current_price} ({pct_change:+.2f}%)")
+        except Exception as e:
+            print(f"   ❌ Error {symbol}: {e}")
+    return market_data
+
+def generate_html(data):
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gwariro Capital Macro Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 font-sans antialiased">
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Header -->
+        <header class="flex justify-between items-center border-b border-gray-800 pb-4 mb-6">
+            <div>
+                <h1 class="text-3xl font-bold tracking-tight text-white flex items-center gap-2">
+                    ⚡ Gwariro Capital Macro Dashboard
+                </h1>
+                <p class="text-sm text-gray-400">Actionable Macroeconomic Indicators & FX Futures Bias Dashboard</p>
+            </div>
+            <div class="text-right text-xs text-gray-400">
+                <p>Last Sync: <span class="text-white font-mono">{datetime.now().strftime('%Y-%m-%d %H:%M')}</span></p>
+                <span class="inline-block px-2 py-1 mt-1 bg-green-950 text-green-400 border border-green-800 rounded font-semibold">● System Live</span>
+            </div>
+        </header>
+
+        <!-- Top Section: FX Bias Table & G6 Differentials -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- FX Bias Table Card -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-xl">
+                <h2 class="text-lg font-semibold text-white mb-4 flex items-center justify-between">
+                    <span>Core FX Bias Classification</span>
+                    <span class="text-xs text-gray-400 font-normal">Score Range: -5.0 to +5.0</span>
+                </h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-gray-800 text-xs text-gray-400 uppercase">
+                                <th class="py-2 px-3">Pair</th>
+                                <th class="py-2 px-3">Price</th>
+                                <th class="py-2 px-3">Change</th>
+                                <th class="py-2 px-3">%</th>
+                                <th class="py-2 px-3">Bias Score</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-800/60 text-sm">
+"""
+    
+    for pair, stats in data.items():
+        bias_color = "text-blue-400 bg-blue-950/40" if stats['bias'] > 0 else "text-red-400 bg-red-950/40"
+        html_content += f"""
+                            <tr class="hover:bg-gray-800/40 transition">
+                                <td class="py-3 px-3 font-bold text-white">{pair}</td>
+                                <td class="py-3 px-3 font-mono">{stats['price']}</td>
+                                <td class="py-3 px-3 font-mono">{stats['change']:+.4f}</td>
+                                <td class="py-3 px-3 font-mono">{stats['pct']:+.2f}%</td>
+                                <td class="py-3 px-3 font-bold font-mono"><span class="px-2 py-1 rounded {bias_color}">{stats['bias']:+.1f}</span></td>
+                            </tr>
+"""
+
+    html_content += f"""
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- G6 Macro Differentials Scatter Plot -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-xl flex flex-col">
+                <h2 class="text-lg font-semibold text-white mb-2">G6 Macro Differentials</h2>
+                <p class="text-xs text-gray-400 mb-4">Relative Growth & Inflation Momentum Quadrants</p>
+                <div class="relative flex-grow min-h-[250px]">
+                    <canvas id="g6ScatterChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Section: Dollar Smile Index & Risk Sentiment -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <!-- Dollar Smile Index -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-xl">
+                <h2 class="text-lg font-semibold text-white mb-1">Dollar Smile Index</h2>
+                <p class="text-xs text-gray-400 mb-4">US Growth Outperformance vs Global Liquidity</p>
+                <div class="relative h-[220px]">
+                    <canvas id="dollarSmileChart"></canvas>
+                </div>
+            </div>
+
+            <!-- VIX & Risk Sentiment -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-xl">
+                <h2 class="text-lg font-semibold text-white mb-1">Risk Sentiment & VIX</h2>
+                <p class="text-xs text-gray-400 mb-4">Volatility & Financial Conditions Proxy</p>
+                <div class="space-y-4 text-sm mt-4">
+                    <div class="bg-gray-950 p-3 rounded-lg border border-gray-800 flex justify-between items-center">
+                        <div>
+                            <p class="text-xs text-gray-400">VIX Volatility Index</p>
+                            <p class="font-bold text-white">16.42 <span class="text-xs text-green-400 font-normal">(-1.2%)</span></p>
+                        </div>
+                        <span class="px-2 py-1 bg-green-950 text-green-400 text-xs rounded">Stable Risk-On</span>
+                    </div>
+                    <div class="bg-gray-950 p-3 rounded-lg border border-gray-800 flex justify-between items-center">
+                        <div>
+                            <p class="text-xs text-gray-400">Gold / Copper Ratio</p>
+                            <p class="font-bold text-white">412.50 <span class="text-xs text-blue-400 font-normal">(Industrial Demand OK)</span></p>
+                        </div>
+                        <span class="px-2 py-1 bg-blue-950 text-blue-400 text-xs rounded">Expansion</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actionable Weekly Focus -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-xl flex flex-col justify-between">
+                <div>
+                    <h2 class="text-lg font-semibold text-white mb-2">Weekly Actionable Brief</h2>
+                    <p class="text-xs text-gray-400 mb-3">Key central bank meetings & geopolitical risk channels.</p>
+                    <div class="space-y-2 text-xs text-gray-300">
+                        <div class="p-2.5 bg-gray-950 rounded border border-gray-800">
+                            <span class="font-bold text-yellow-400">Fed & ECB Focus:</span> Divergence in rate expectations driving EURUSD compression.
+                        </div>
+                        <div class="p-2.5 bg-gray-950 rounded border border-gray-800">
+                            <span class="font-bold text-red-400">Energy Shock Risk:</span> Crude price volatility spilling into CAD and MXN crosses.
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4 pt-3 border-t border-gray-800 text-xs text-gray-500 text-center">
+                    Automated via Python & GitHub Actions
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart.js Scripts for Visuals -->
+    <script>
+        // G6 Scatter Chart
+        const ctxG6 = document.getElementById('g6ScatterChart').getContext('2d');
+        new Chart(ctxG6, {{
+            type: 'scatter',
+            data: {{
+                datasets: [
+                    {{ label: 'US', data: [{{x: 25, y: 1.2}}], backgroundColor: '#3b82f6', pointRadius: 8 }},
+                    {{ label: 'JP', data: [{{x: 30, y: 4.1}}], backgroundColor: '#8b5cf6', pointRadius: 8 }},
+                    {{ label: 'CA', data: [{{x: 32, y: 3.9}}], backgroundColor: '#ef4444', pointRadius: 8 }},
+                    {{ label: 'UK', data: [{{x: 26, y: 0.5}}], backgroundColor: '#10b981', pointRadius: 8 }},
+                    {{ label: 'EU', data: [{{x: -10, y: -2.5}}], backgroundColor: '#06b6d4', pointRadius: 8 }},
+                    {{ label: 'AU', data: [{{x: 0, y: -3.2}}], backgroundColor: '#eab308', pointRadius: 8 }}
+                ]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {{
+                    x: {{ grid: {{ color: '#374151' }}, title: {{ display: true, text: 'Growth Momentum', color: '#9ca3af' }} }},
+                    y: {{ grid: {{ color: '#374151' }}, title: {{ display: true, text: 'Inflation / Rate Differential', color: '#9ca3af' }} }}
+                }},
+                plugins: {{ legend: {{ labels: {{ color: '#d1d5db', boxWidth: 12 }} }} }}
+            }}
+        }});
+
+        // Dollar Smile Index with Current US Position Marker
+        const ctxSmile = document.getElementById('dollarSmileChart').getContext('2d');
+        new Chart(ctxSmile, {{
+            type: 'line',
+            data: {{
+                labels: ['-2.0', '-1.0', '0.0', '+1.0', '+2.0'],
+                datasets: [
+                    {{
+                        label: 'USD Smile Curve',
+                        data: [85, 45, 20, 50, 90],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        order: 2
+                    }},
+                    {{
+                        label: 'Current US Position',
+                        type: 'scatter',
+                        data: [{{x: '+1.0', y: 50}}], // Plotted on the right-hand US outperformance shoulder
+                        backgroundColor: '#ef4444',
+                        borderColor: '#ffffff',
+                        borderWidth: 2,
+                        pointRadius: 9,
+                        order: 1
+                    }}
+                ]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {{
+                    x: {{ grid: {{ display: false }}, ticks: {{ color: '#9ca3af' }} }},
+                    y: {{ grid: {{ color: '#374151' }}, ticks: {{ color: '#9ca3af' }}, min: 0, max: 100 }}
+                }},
+                plugins: {{ 
+                    legend: {{ labels: {{ color: '#d1d5db', boxWidth: 12 }} }} 
+                }}
+            }}
+        }});
+    </script>
+</body>
+</html>
+"""
+    
+    with open("Macro_Dashboard.html", "w", encoding="utf-8") as f:
+        f.write(html_content)
+    print("🎉 SUCCESS! Updated Dashboard with Dollar Smile Current Position Marker.")
+
+if __name__ == "__main__":
+    data = fetch_data()
+    generate_html(data)
