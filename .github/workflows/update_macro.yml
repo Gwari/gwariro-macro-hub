@@ -3,7 +3,11 @@ name: Weekly Macro Hub Auto-Update
 on:
   schedule:
     - cron: '0 8 * * SAT' # Runs every Saturday at 08:00 UTC
-  workflow_dispatch: # Allows you to manually trigger it anytime from GitHub
+  workflow_dispatch: # Allows manual triggers from GitHub
+
+# Grant explicit write permissions so the bot can push changes back
+permissions:
+  contents: write
 
 jobs:
   run-python-script:
@@ -30,5 +34,5 @@ jobs:
           git config --global user.name "GitHub Action Bot"
           git config --global user.email "action@github.com"
           git add Macro_Dashboard.html
-          git commit -m "Automated weekend macro update: $(date +'%Y-%m-%d')" || exit 0
-          git pushs
+          git diff --staged --quiet || git commit -m "Automated weekend macro update: $(date +'%Y-%m-%d')"
+          git push origin HEAD
